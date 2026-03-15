@@ -269,58 +269,72 @@ class BangumiAPI
      */
     private static function __getCalendarRawData($ID, $filter)
     {
-        $apiUrl = 'https://api.bgm.tv/calendar';
-        $data = self::curlFileGetContents($apiUrl);
-        if ($data == 'null') {
-            return '-1';
-        }
-
-        $data = json_decode($data, true);
+        // 初始化日历数据结构
         $result = array();
         $weekdays = array('周一', '周二', '周三', '周四', '周五', '周六', '周日');
         
-        foreach ($data as $day) {
-            $items = array();
-            foreach ($day['items'] as $item) {
-                $collect = array(
-                    'name' => $item['name'],
-                    'name_cn' => $item['name_cn'],
-                    'url' => 'https://bgm.tv/subject/' . $item['id'],
-                    'img' => str_replace('http://', 'https://', $item['images']['large']),
-                    'id' => $item['id'],
-                );
-                array_push($items, $collect);
-            }
+        // 为每一天创建一个空的条目数组
+        for ($i = 0; $i < 7; $i++) {
             array_push($result, array(
                 'weekday' => array(
-                    'cn' => $weekdays[$day['weekday']['id'] - 1],
-                    'ja' => $day['weekday']['ja'],
-                    'en' => $day['weekday']['en'],
+                    'cn' => $weekdays[$i],
+                    'ja' => '',
+                    'en' => '',
                 ),
-                'items' => $items
+                'items' => array()
             ));
         }
 
-        if ($filter == 'watching') {
+        // 获取用户在看的番剧数据
+        $watchingCache = self::__isCacheExpired(__DIR__ . '/json/watching.json', 86400);
+        // 如果缓存不存在或已过期，先更新缓存
+        if ($watchingCache == -1 || $watchingCache == 1) {
+            // 先获取在看数据并缓存
+            self::__getCollectionRawData($ID);
             $watchingCache = self::__isCacheExpired(__DIR__ . '/json/watching.json', 86400);
-            // 如果缓存不存在或已过期，先更新缓存
-            if ($watchingCache == -1 || $watchingCache == 1) {
-                // 先获取在看数据并缓存
-                self::__getCollectionRawData($ID);
-                $watchingCache = self::__isCacheExpired(__DIR__ . '/json/watching.json', 86400);
-            }
-            
-            if ($watchingCache != -1 && $watchingCache != 1) {
-                $watchingIds = array();
-                foreach ($watchingCache['data'] as $item) {
-                    $watchingIds[] = $item['id'];
-                }
-                foreach ($result as &$day) {
-                    $filtered = array_filter($day['items'], function($item) use ($watchingIds) {
-                        return in_array($item['id'], $watchingIds);
-                    });
-                    // 重新索引数组，避免 JSON 编码后变成对象
-                    $day['items'] = array_values($filtered);
+        }
+        
+        if ($watchingCache != -1 && $watchingCache != 1) {
+            foreach ($watchingCache['data'] as $item) {
+                // 确保番剧有 air_weekday 字段
+                if (isset($item['air_weekday']) && !empty($item['air_weekday'])) {
+                    // 找到对应的星期几（注意：Bangumi API 中，周日是 7，这里需要转换为 0-6 的索引）
+                    $weekdayIndex = 0;
+                    switch (substr($item['air_weekday'], 0, 3)) {
+                        case 'Mon':
+                            $weekdayIndex = 0;
+                            break;
+                        case 'Tue':
+                            $weekdayIndex = 1;
+                            break;
+                        case 'Wed':
+                            $weekdayIndex = 2;
+                            break;
+                        case 'Thu':
+                            $weekdayIndex = 3;
+                            break;
+                        case 'Fri':
+                            $weekdayIndex = 4;
+                            break;
+                        case 'Sat':
+                            $weekdayIndex = 5;
+                            break;
+                        case 'Sun':
+                            $weekdayIndex = 6;
+                            break;
+                    }
+                    
+                    // 创建番剧条目
+                    $collect = array(
+                        'name' => $item['name'],
+                        'name_cn' => $item['name_cn'],
+                        'url' => $item['url'],
+                        'img' => $item['img'],
+                        'id' => $item['id'],
+                    );
+                    
+                    // 将番剧添加到对应的星期几
+                    array_push($result[$weekdayIndex]['items'], $collect);
                 }
             }
         }
@@ -345,7 +359,7 @@ class BangumiAPI
 
         if ($cache == -1 || $cache == 1) {
             $raw = self::__getCalendarRawData($ID, $filter);
-            if ($raw == -1 || count($raw) == 0) {
+            if (count($raw) == 0) {
                 $cache = array('time' => 1, 'data' => array());
             } else {
                 $cache = array('time' => time(), 'data' => $raw);
