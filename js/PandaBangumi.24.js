@@ -79,13 +79,18 @@ function initCalendar(){
         $(item).html('<div class="dot"></div><div class="dot"></div><div class="dot"></div>');
         
         var filter = $(item).attr('data-filter');
+        // 优先使用元素上的 data-hide-finished 属性，否则使用全局设置
+        var hideFinishedAttr = $(item).attr('data-hide-finished');
+        var hideFinished = hideFinishedAttr === 'true' || (hideFinishedAttr !== 'false' && typeof bgmHideFinished !== 'undefined' && bgmHideFinished);
         var url = bgmBase + '?type=calendar';
         if(filter) {
             url += '&filter=' + filter;
         }
+        if(hideFinished) {
+            url += '&hideFinished=1';
+        }
         
         $.getJSON(url, function(data){
-            console.log('Calendar data:', data);
             $(item).html('');
             
             if (!data || data.length === 0) {
@@ -99,6 +104,8 @@ function initCalendar(){
             var todayWeekday = today === 0 ? 7 : today;
             // 转换为数组索引 (0=周一, ... 6=周日)
             var todayIndex = todayWeekday - 1;
+            
+
             
             var calendarId = 'bgm-calendar-' + i;
             var tabsHtml = '<div class="bgm-calendar-tabs">';

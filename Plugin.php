@@ -9,7 +9,7 @@
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '2.4');
+define('PandaBangumi_Plugin_VERSION', '2.5');
 
 class PandaBangumi_Plugin implements Typecho_Plugin_Interface
 {
@@ -87,6 +87,11 @@ class PandaBangumi_Plugin implements Typecho_Plugin_Interface
 
         $Limit = new Typecho_Widget_Helper_Form_Element_Text('Limit', NULL, '20', _t('已看列表数量限制'), _t('设置获取数量限制，不建议设置得太大，有被 Bangumi 拉黑的风险。<b>仅当通过网页解析时有效</b>。不影响在看列表。'));
         $form->addInput($Limit);
+
+        $ShowFinished = new Typecho_Widget_Helper_Form_Element_Checkbox('ShowFinished', 
+            array('hide'=>_t('在追番日历中隐藏已完结的番剧')),
+            array(), _t('完结番剧显示'), _t('启用后，追番日历将隐藏已看完的番剧（通过对比观看进度与总集数判断）。'));
+        $form->addInput($ShowFinished);
     }
 
     /**
@@ -132,5 +137,13 @@ class PandaBangumi_Plugin implements Typecho_Plugin_Interface
         echo '<script type="text/javascript" src="';
         Helper::options()->pluginUrl('/PandaBangumi/js/PandaBangumi.24.js');
         echo '?v='.PandaBangumi_Plugin_VERSION.'"></script>';
+        
+        // 输出是否隐藏完结番剧的设置到前端
+        $hideFinished = false;
+        $bgmst = Helper::options()->plugin('PandaBangumi')->ShowFinished;
+        if (!empty($bgmst) && in_array('hide', $bgmst)) {
+            $hideFinished = true;
+        }
+        echo '<script>var bgmHideFinished = ' . ($hideFinished ? 'true' : 'false') . ';</script>';
     }
 }

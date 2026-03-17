@@ -32,6 +32,7 @@ class BangumiAPI
         $content = curl_exec($myCurl);
         //关闭
         curl_close($myCurl);
+        
         return $content;
     }
 
@@ -126,6 +127,67 @@ class BangumiAPI
         return $content;
     }
 
+    /**
+     * 获取番剧是否完结的状态
+     * 通过 Bangumi API 获取番剧详细信息
+     *
+     * @param int $subjectId 番剧 ID
+     * @param int $userStatus 用户观看进度
+     * @param int $epsCount 番剧总集数
+     * @return bool 是否已完结
+     */
+    private static function __isSubjectFinished($subjectId, $userStatus, $epsCount)
+    {
+        // 先检查缓存
+        $cacheFile = __DIR__ . '/json/subject_finished.json';
+        $cache = array();
+        if (file_exists($cacheFile)) {
+            $cache = json_decode(file_get_contents($cacheFile), true);
+            if (isset($cache[$subjectId])) {
+                return $cache[$subjectId];
+            }
+        }
+        
+        $isFinished = false;
+        
+        // 使用 v0 API
+        $apiUrl = 'https://api.bgm.tv/v0/subjects/' . $subjectId;
+        $data = self::curlFileGetContents($apiUrl);
+        
+        if (!empty($data)) {
+            $json = json_decode($data, true);
+            
+            // 从 infobox 中查找 "播放结束" 日期
+            $endDate = '';
+            if (isset($json['infobox']) && is_array($json['infobox'])) {
+                foreach ($json['infobox'] as $item) {
+                    if (isset($item['key']) && $item['key'] === '播放结束') {
+                        // 解析日期格式：如 "2024年9月17日"
+                        $value = $item['value'];
+                        if (preg_match('/(\d{4})年(\d{1,2})月(\d{1,2})日/', $value, $matches)) {
+                            $endDate = sprintf('%04d-%02d-%02d', $matches[1], $matches[2], $matches[3]);
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            // 只用播放结束日期判断：如果没有播放结束字段则未完结
+            if ($endDate) {
+                $endTimestamp = strtotime($endDate);
+                if ($endTimestamp > 0 && time() > $endTimestamp) {
+                    $isFinished = true;
+                }
+            }
+        }
+        
+        // 写入缓存
+        $cache[$subjectId] = $isFinished;
+        file_put_contents($cacheFile, json_encode($cache));
+        
+        return $isFinished;
+    }
+    
     private static function __parseFromDoc($doc) {
         $result = array();
         $bgmBase = 'https://bgm.tv';
@@ -267,7 +329,7 @@ class BangumiAPI
      *
      * @return mixed
      */
-    private static function __getCalendarRawData($ID, $filter)
+    private static function __getCalendarRawData($ID, $filter, $hideFinished = false)
     {
         // 初始化日历数据结构
         $result = array();
@@ -285,7 +347,7 @@ class BangumiAPI
             ));
         }
 
-        // 获取用户在看的番剧数据
+        // 获取用户的在看数据
         $watchingCache = self::__isCacheExpired(__DIR__ . '/json/watching.json', 86400);
         // 如果缓存不存在或已过期，先更新缓存
         if ($watchingCache == -1 || $watchingCache == 1) {
@@ -324,6 +386,14 @@ class BangumiAPI
                             break;
                     }
                     
+                    // 检查番剧本身是否已完结（通过 Bangumi API）
+                    $isFinished = self::__isSubjectFinished($item['id'], $item['status'], $item['count']);
+                    
+                    // 如果已完结且需要隐藏完结番剧，则跳过
+                    if ($isFinished && $hideFinished) {
+                        continue;
+                    }
+                    
                     // 创建番剧条目
                     $collect = array(
                         'name' => $item['name'],
@@ -350,15 +420,25 @@ class BangumiAPI
      */
     public static function updateCalendarCacheAndReturn($ID, $ValidTimeSpan, $filter)
     {
+        // 获取是否隐藏已完结番剧的设置
+        $hideFinished = false;
+        $bgmst = Helper::options()->plugin('PandaBangumi')->ShowFinished;
+        
+        if (!empty($bgmst) && in_array('hide', $bgmst)) {
+            $hideFinished = true;
+        }
+        
         $cacheFile = __DIR__ . '/json/calendar.json';
         if ($filter == 'watching') {
             $cacheFile = __DIR__ . '/json/calendar_watching.json';
+        } elseif ($hideFinished) {
+            $cacheFile = __DIR__ . '/json/calendar_no_finished.json';
         }
         
         $cache = self::__isCacheExpired($cacheFile, $ValidTimeSpan);
 
         if ($cache == -1 || $cache == 1) {
-            $raw = self::__getCalendarRawData($ID, $filter);
+            $raw = self::__getCalendarRawData($ID, $filter, $hideFinished);
             if (count($raw) == 0) {
                 $cache = array('time' => 1, 'data' => array());
             } else {
