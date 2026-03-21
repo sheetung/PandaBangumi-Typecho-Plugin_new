@@ -1,3 +1,35 @@
+.bgm-collection,
+.bgm-calendar{
+    --bgm-surface: #fff;
+    --bgm-surface-hover-shadow: 0 6px 12px rgba(0,0,0,0.2);
+    --bgm-surface-shadow: 0 0 6px rgba(0,0,0,0.2);
+    --bgm-text-primary: #333;
+    --bgm-text-secondary: #5e5b5c;
+    --bgm-border: #e0e0e0;
+    --bgm-muted: #999;
+    --bgm-status-bg: rgba(0,0,0,0.1);
+}
+
+body.theme-dark .bgm-collection,
+body.theme-dark .bgm-calendar,
+body.dark .bgm-collection,
+body.dark .bgm-calendar,
+body.dark-theme .bgm-collection,
+body.dark-theme .bgm-calendar,
+body[data-theme="dark"] .bgm-collection,
+body[data-theme="dark"] .bgm-calendar,
+html[data-theme="dark"] .bgm-collection,
+html[data-theme="dark"] .bgm-calendar{
+    --bgm-surface: #1f1f1f;
+    --bgm-surface-hover-shadow: 0 10px 24px rgba(0,0,0,0.35);
+    --bgm-surface-shadow: 0 0 10px rgba(0,0,0,0.3);
+    --bgm-text-primary: #f2f2f2;
+    --bgm-text-secondary: #b7b7b7;
+    --bgm-border: rgba(255,255,255,0.12);
+    --bgm-muted: #b0b0b0;
+    --bgm-status-bg: rgba(255,255,255,0.08);
+}
+
 .bgm-collection{
     margin: 0 auto;
     display: flex;
@@ -11,14 +43,14 @@
     margin-left: 15px;
     margin-bottom: 15px;
     position: relative;
-    box-shadow: 0 0 6px rgba(0,0,0,0.2);
+    box-shadow: var(--bgm-surface-shadow);
     transition: 0.3s ease box-shadow;
     border: none!important;
     text-decoration: none!important;
-    background: #fff;
+    background: var(--bgm-surface);
 }
 .bgm-item:hover{
-    box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+    box-shadow: var(--bgm-surface-hover-shadow);
     border: none!important;
     text-decoration: none!important;
 }
@@ -69,10 +101,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     font-size: 0.9rem;
-    color: #333
+    color: var(--bgm-text-primary)
 }
 .bgm-item-title:not(.main){
-    color: #5e5b5c;
+    color: var(--bgm-text-secondary);
 }
 .bgm-item-title.main{
     font-size: 1.2rem;
@@ -80,11 +112,11 @@
 .bgm-item-statusBar-container{
     margin: 0.2rem auto;
     padding: 0.2em;
-    background: rgba(0,0,0,0.1);
+    background: var(--bgm-status-bg);
     width: 100%;
     position: relative;
     z-index: 0;
-    color: #333;
+    color: var(--bgm-text-primary);
 }
 .bgm-item-statusBar{
     position: absolute;
@@ -171,7 +203,7 @@ body.theme-dark .loader:hover {
 .bgm-calendar{
     margin: 0 auto;
     width: 100%;
-    background: #fff;
+    background: var(--bgm-surface);
     border-radius: 12px;
     box-shadow: 0 2px 12px rgba(0,0,0,0.1);
     padding: 20px;
@@ -180,14 +212,14 @@ body.theme-dark .loader:hover {
 .bgm-calendar-tabs{
     display: flex;
     justify-content: center;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--bgm-border);
     margin-bottom: 20px;
 }
 
 .bgm-calendar-tab{
     padding: 10px 20px;
     cursor: pointer;
-    color: #666;
+    color: var(--bgm-text-secondary);
     font-size: 0.95rem;
     transition: all 0.3s ease;
     border-bottom: 2px solid transparent;
@@ -195,7 +227,7 @@ body.theme-dark .loader:hover {
 }
 
 .bgm-calendar-tab:hover{
-    color: #333;
+    color: var(--bgm-text-primary);
 }
 
 .bgm-calendar-tab.active{
@@ -223,15 +255,15 @@ body.theme-dark .loader:hover {
     margin-left: 15px;
     margin-bottom: 15px;
     position: relative;
-    box-shadow: 0 0 6px rgba(0,0,0,0.2);
+    box-shadow: var(--bgm-surface-shadow);
     transition: 0.3s ease box-shadow;
     border: none!important;
     text-decoration: none!important;
-    background: #fff;
+    background: var(--bgm-surface);
 }
 
 .bgm-calendar-item:hover{
-    box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+    box-shadow: var(--bgm-surface-hover-shadow);
     border: none!important;
     text-decoration: none!important;
 }
@@ -291,13 +323,24 @@ body.theme-dark .loader:hover {
     overflow: hidden;
     text-overflow: ellipsis;
     font-size: 0.9rem;
-    color: #333
+    color: var(--bgm-text-primary)
 }
 
 .bgm-calendar-item-title:not(.main){
-    color: #5e5b5c;
+    color: var(--bgm-text-secondary);
 }
 
 .bgm-calendar-item-title.main{
     font-size: 1.2rem;
+}
+
+.bgm-calendar-message{
+    width: 100%;
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--bgm-muted) !important;
+}
+
+.bgm-calendar-error{
+    color: #ff7a7a !important;
 }

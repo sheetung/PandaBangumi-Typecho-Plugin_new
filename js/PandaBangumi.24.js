@@ -93,8 +93,17 @@ function initCalendar(){
         $.getJSON(url, function(data){
             $(item).html('');
             
+            function decorateCalendarMessage(selector, extraClass) {
+                var target = $(item).children(selector);
+                target.addClass('bgm-calendar-message');
+                if (extraClass) {
+                    target.addClass(extraClass);
+                }
+            }
+            
             if (!data || data.length === 0) {
                 $(item).html('<div style="text-align:center;padding:20px;">暂无数据</div>');
+                decorateCalendarMessage('[style*="text-align:center;padding:20px;"]');
                 return;
             }
             
@@ -133,6 +142,7 @@ function initCalendar(){
             contentHtml += '</div>';
             
             $(item).append(tabsHtml + contentHtml);
+            $(item).find('[style*="width:100%;text-align:center;padding:40px;color:#999;"]').addClass('bgm-calendar-message');
             
             $(item).find('.bgm-calendar-tab').on('click', function(){
                 var dayIndex = $(this).attr('data-day');
@@ -144,6 +154,7 @@ function initCalendar(){
         }).fail(function(jqXHR, textStatus, errorThrown) {
             console.error('Calendar load failed:', textStatus, errorThrown);
             $(item).html('<div style="text-align:center;padding:20px;color:red;">加载失败，请刷新重试</div>');
+            $(item).children('[style*="text-align:center;padding:20px;color:red;"]').addClass('bgm-calendar-message bgm-calendar-error');
         });
     });
 }
