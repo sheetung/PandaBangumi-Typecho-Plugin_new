@@ -14,17 +14,11 @@ require_once 'simple_html_dom.php';
 
 class BangumiAPI
 {
-    private static $debugInfo = array();
-
-    public static function getDebugInfo()
+    public static function __isCacheExpiredForSync($filePath, $validTimeSpan)
     {
-        return self::$debugInfo;
+        return self::__isCacheExpired($filePath, $validTimeSpan);
     }
 
-    private static function debug($key, $value)
-    {
-        self::$debugInfo[$key] = $value;
-    }
     /**
      * 使用 curl 代替 file_get_contents()
      *
@@ -32,7 +26,6 @@ class BangumiAPI
      */
     public static function curlFileGetContents($_url)
     {
-        $startedAt = microtime(true);
         $ch = curl_init($_url);
 
         curl_setopt_array($ch, array(
@@ -68,14 +61,6 @@ class BangumiAPI
 
         curl_close($ch);
 
-        self::$debugInfo['requests'][] = array(
-            'url' => $_url,
-            'http_code' => $httpCode,
-            'curl_error' => $curlError,
-            'response_length' => is_string($content) ? strlen($content) : 0,
-            'elapsed_ms' => round((microtime(true) - $startedAt) * 1000, 2),
-        );
-
         if ($content === false) {
             error_log(
                 '[PandaBangumi] cURL error: ' .
@@ -104,20 +89,9 @@ class BangumiAPI
      */
     private static function __getCollectionRawData($ID)
     {
-        // 配置项保存的是数字用户 ID，数字 ID 优先使用兼容性更好的旧接口。
-        // 新 v0 接口要求 username，因此仅在旧接口失败且 ID 不是纯数字时回退。
+        // PHP 仅作为前端直连失败时的缓存兜底。
         $apiUrl = 'https://api.bgm.tv/user/' . rawurlencode($ID) . '/collection?cat=playing';
         $data = self::curlFileGetContents($apiUrl);
-        $legacyDecoded = is_string($data) ? json_decode($data, true) : null;
-        if ((!is_string($data) || $data === '' || $data === 'null' || $legacyDecoded === array()) && !ctype_digit((string) $ID)) {
-            $apiUrl = 'https://api.bgm.tv/v0/users/' . rawurlencode($ID) .
-                '/collections?subject_type=2&type=3&limit=50&offset=0';
-            $v0Data = self::curlFileGetContents($apiUrl);
-            $decoded = is_string($v0Data) ? json_decode($v0Data, true) : null;
-            if (is_array($decoded) && isset($decoded['data']) && is_array($decoded['data'])) {
-                $data = json_encode($decoded['data']);
-            }
-        }
         if (!is_string($data) || $data === '' || $data === 'null') {
             return array(); // 没有标记数据或请求失败
         }
@@ -127,8 +101,6 @@ class BangumiAPI
             error_log('[PandaBangumi] Invalid collection JSON: ' . json_last_error_msg());
             return array();
         }
-
-        self::debug('collection_items_from_api', count($data));
 
         $weekdays = array('Mon.', 'Tue.', 'Wed.', 'Thu', 'Fri', 'Sat', 'Sun');
         $collections = array();
@@ -209,6 +181,55 @@ class BangumiAPI
         }
 
         return $content;
+    }
+
+    /**
+     * 判断番剧本身是否完结，不使用用户的观看进度。
+     */
+    private static function __isSubjectFinished($subjectId)
+    {
+        $data = self::curlFileGetContents(
+            'https://api.bgm.tv/v0/subjects/' . rawurlencode($subjectId)
+        );
+        if (!is_string($data) || $data === '') {
+            return false;
+        }
+
+        $subject = json_decode($data, true);
+        if (!is_array($subject)) {
+            return false;
+        }
+
+        $total = isset($subject['eps']) ? (int) $subject['eps'] : 0;
+        $episodeData = self::curlFileGetContents(
+            'https://api.bgm.tv/v0/episodes?subject_id=' . rawurlencode($subjectId) . '&limit=200&offset=0'
+        );
+        $episodes = is_string($episodeData) ? json_decode($episodeData, true) : null;
+        if ($total > 0 && is_array($episodes) && isset($episodes['data']) && is_array($episodes['data'])) {
+            $today = date('Y-m-d');
+            $aired = 0;
+            foreach ($episodes['data'] as $episode) {
+                if (isset($episode['airdate']) && $episode['airdate'] !== '' && $episode['airdate'] <= $today) {
+                    $aired++;
+                }
+            }
+            if ($aired >= $total) {
+                return true;
+            }
+        }
+
+        if (isset($subject['infobox']) && is_array($subject['infobox'])) {
+            foreach ($subject['infobox'] as $entry) {
+                if (!is_array($entry) || !isset($entry['key'])) {
+                    continue;
+                }
+                if (in_array($entry['key'], array('播放结束', '放送終了', '结束'), true)) {
+                    return !empty($entry['value']);
+                }
+            }
+        }
+
+        return false;
     }
 
     private static function __parseFromDoc($doc) {
@@ -419,10 +440,8 @@ class BangumiAPI
                             break;
                     }
                     
-                    // 直接使用观看进度判断，避免日历生成时产生 N+1 个详情 API 请求。
-                    $status = isset($item['status']) ? (int) $item['status'] : 0;
-                    $count = isset($item['count']) ? (int) $item['count'] : 0;
-                    if ($hideFinished && $count > 0 && $status >= $count) {
+                    // 隐藏的是番剧本身已完结，而不是用户已经看完。
+                    if ($hideFinished && self::__isSubjectFinished($item['id'])) {
                         continue;
                     }
                     
@@ -467,13 +486,6 @@ class BangumiAPI
             );
         }
 
-        self::debug('calendar', array(
-            'user' => $ID,
-            'filter' => $filter,
-            'hide_finished' => $hideFinished,
-            'cache_valid_seconds' => $ValidTimeSpan,
-        ));
-        
         $cacheFile = __DIR__ . '/json/calendar.json';
         if ($filter == 'watching') {
             $cacheFile = __DIR__ . '/json/calendar_watching.json';
@@ -482,8 +494,6 @@ class BangumiAPI
         }
         
         $cache = self::__isCacheExpired($cacheFile, $ValidTimeSpan);
-        $cacheState = $cache == -1 ? 'missing' : ($cache == 1 ? 'expired' : 'valid');
-
         if ($cache == -1 || $cache == 1) {
             $raw = self::__getCalendarRawData($ID, $filter, $hideFinished);
             if (count($raw) == 0) {
@@ -493,15 +503,6 @@ class BangumiAPI
             }
             file_put_contents($cacheFile, json_encode($cache));
         }
-
-        self::debug('calendar_result', array(
-            'cache_file' => basename($cacheFile),
-            'cache_state' => $cacheState,
-            'days' => is_array($cache['data']) ? count($cache['data']) : 0,
-            'items' => is_array($cache['data']) ? array_sum(array_map(function ($day) {
-                return isset($day['items']) && is_array($day['items']) ? count($day['items']) : 0;
-            }, $cache['data'])) : 0,
-        ));
 
         return json_encode($cache['data']);
     }
@@ -553,6 +554,44 @@ class BangumiAPI
 
 class PandaBangumi_Action extends Widget_Abstract_Contents implements Widget_Interface_Do
 {
+    private function syncClientCache($ID, $ValidTimeSpan)
+    {
+        $payload = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($payload) || !isset($payload['cache_type']) || !isset($payload['data'])) {
+            echo json_encode(array('success' => false, 'message' => 'Invalid cache payload'));
+            return;
+        }
+
+        $cacheType = $payload['cache_type'] === 'watched' ? 'watched' : 'watching';
+        $data = $payload['data'];
+        if (!is_array($data) || count($data) > 1000) {
+            echo json_encode(array('success' => false, 'message' => 'Invalid cache data'));
+            return;
+        }
+
+        $cacheFile = __DIR__ . '/json/' . $cacheType . '.json';
+        $existing = BangumiAPI::__isCacheExpiredForSync($cacheFile, $ValidTimeSpan);
+        if ($existing !== -1 && $existing !== 1) {
+            echo json_encode(array('success' => true, 'cached' => true));
+            return;
+        }
+
+        if ($cacheType === 'watched') {
+            $oldData = is_array($existing) && isset($existing['data']) && is_array($existing['data'])
+                ? $existing['data'] : array('anime' => array(), 'real' => array());
+            $cate = isset($payload['cate']) && $payload['cate'] === 'real' ? 'real' : 'anime';
+            $oldData[$cate] = $data;
+            $data = $oldData;
+        }
+        $cache = array('time' => time(), 'data' => $data);
+        file_put_contents(
+            $cacheFile,
+            json_encode($cache, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            LOCK_EX
+        );
+        echo json_encode(array('success' => true, 'cached' => false));
+    }
+
     /**
      * 返回请求的 HTML
      * @access public
@@ -574,6 +613,11 @@ class PandaBangumi_Action extends Widget_Abstract_Contents implements Widget_Int
             $PageSize = 1000000;
         }
 
+        if (strtolower($_GET['type']) == 'sync') {
+            $this->syncClientCache($ID, $ValidTimeSpan);
+            exit;
+        }
+
         $result = null;
         if (strtolower($_GET['type']) == 'watching')
             $result = BangumiAPI::updateCacheAndReturn($ID, $PageSize, $From, $ValidTimeSpan);
@@ -584,12 +628,7 @@ class PandaBangumi_Action extends Widget_Abstract_Contents implements Widget_Int
             $result = BangumiAPI::updateCalendarCacheAndReturn($ID, $ValidTimeSpan, $filter);
         }
 
-        if (isset($_GET['debug']) && $_GET['debug'] == '1') {
-            echo json_encode(array(
-                'debug' => BangumiAPI::getDebugInfo(),
-                'data' => json_decode($result, true),
-            ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        } elseif ($result !== null) {
+        if ($result !== null) {
             echo $result;
         }
     }

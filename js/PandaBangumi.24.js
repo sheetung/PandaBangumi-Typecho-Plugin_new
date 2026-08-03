@@ -1,6 +1,18 @@
 console.log('%c PandaBangumi 2.3 %c https://blog.imalan.cn/archives/128/ ', 'color: #fadfa3; background: #23b7e5; padding:5px 0;', 'background: #1c2b36; padding:5px 0;');
 
 var bgmDirectCache = {};
+var bgmFinishedCache = {};
+var bgmSubjectCache = {};
+
+function syncBgmCache(type, cate, data) {
+    fetch(bgmBase + '?type=sync', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({cache_type: type, cate: cate, data: data})
+    }).catch(function(error) {
+        console.warn('PandaBangumi cache sync failed:', error);
+    });
+}
 
 function normalizeBgmSubject(item) {
     var subject = item.subject || {};
@@ -23,6 +35,48 @@ function normalizeBgmSubject(item) {
     };
 }
 
+function enrichBgmEpisodeCount(item) {
+    if (item.count > 0 || !item.id) return Promise.resolve(item);
+    if (!bgmSubjectCache[item.id]) {
+        bgmSubjectCache[item.id] = fetch(bgmApiBase + '/subjects/' + encodeURIComponent(item.id), {
+            headers: {Accept: 'application/json'}
+        }).then(function(response) {
+            if (!response.ok) throw new Error('Subject API HTTP ' + response.status);
+            return response.json();
+        });
+    }
+    return bgmSubjectCache[item.id].then(function(subject) {
+        var count = Number(subject.eps_count || subject.eps || subject.total_episodes || 0);
+        if (!count && Array.isArray(subject.infobox)) {
+            subject.infobox.some(function(entry) {
+                if (entry && entry.key === '话数') {
+                    var match = String(entry.value || '').match(/\d+/);
+                    count = match ? Number(match[0]) : 0;
+                    return true;
+                }
+                return false;
+            });
+        }
+        if (count > 0) {
+            item.count = count;
+            return item;
+        }
+        return fetch(bgmApiBase + '/episodes?subject_id=' + encodeURIComponent(item.id) + '&limit=200&offset=0', {
+            headers: {Accept: 'application/json'}
+        }).then(function(response) {
+            if (!response.ok) throw new Error('Episode API HTTP ' + response.status);
+            return response.json();
+        }).then(function(episodePayload) {
+            var episodes = Array.isArray(episodePayload.data) ? episodePayload.data : [];
+            var episodeTotal = Number(episodePayload.total || episodes.length);
+            if (episodeTotal > 0) item.count = episodeTotal;
+            return item;
+        });
+    }).catch(function() {
+        return item;
+    });
+}
+
 function directCollections(type, cate) {
     var subjectType = type === 'watched' && cate === 'real' ? 6 : 2;
     var collectionType = type === 'watched' ? 2 : 3;
@@ -43,7 +97,11 @@ function directCollections(type, cate) {
             if (!payload || !Array.isArray(payload.data)) {
                 throw new Error('Invalid Bangumi API response');
             }
-            return payload.data.map(normalizeBgmSubject);
+            var data = payload.data.map(normalizeBgmSubject);
+            return Promise.all(data.map(enrichBgmEpisodeCount)).then(function(enriched) {
+                syncBgmCache(type, cate, enriched);
+                return enriched;
+            });
         });
     return bgmDirectCache[cacheKey];
 }
@@ -54,9 +112,7 @@ function directCalendar(hideFinished) {
         var result = weekdays.map(function(name) {
             return {weekday: {cn: name, ja: '', en: ''}, items: []};
         });
-        items.forEach(function(item) {
-            var count = Number(item.count || 0);
-            if (hideFinished && count > 0 && Number(item.status || 0) >= count) return;
+        function addItem(item) {
             var index = Number(item.air_weekday || 0) - 1;
             if (index >= 0 && index < 7) {
                 result[index].items.push({
@@ -67,9 +123,66 @@ function directCalendar(hideFinished) {
                     id: item.id
                 });
             }
+        }
+        if (!hideFinished) {
+            items.forEach(addItem);
+            return result;
+        }
+        return Promise.all(items.map(isBgmSubjectFinished)).then(function(states) {
+            items.forEach(function(item, index) {
+                if (!states[index]) addItem(item);
+            });
+            return result;
         });
-        return result;
     });
+}
+
+function isBgmSubjectFinished(item) {
+    if (bgmFinishedCache[item.id]) return bgmFinishedCache[item.id];
+    var request = fetch(bgmApiBase + '/subjects/' + encodeURIComponent(item.id), {
+        headers: {Accept: 'application/json'}
+    }).then(function(response) {
+        if (!response.ok) throw new Error('Subject API HTTP ' + response.status);
+        return response.json();
+    }).then(function(subject) {
+        var total = Number(subject.eps || subject.eps_count || 0);
+        return fetch(bgmApiBase + '/episodes?subject_id=' + encodeURIComponent(item.id) + '&limit=200&offset=0', {
+            headers: {Accept: 'application/json'}
+        }).then(function(response) {
+            if (!response.ok) throw new Error('Episode API HTTP ' + response.status);
+            return response.json();
+        }).then(function(episodePayload) {
+            var episodes = Array.isArray(episodePayload.data) ? episodePayload.data : [];
+            var today = new Date().toISOString().slice(0, 10);
+            var aired = episodes.filter(function(episode) {
+                return episode && episode.airdate && episode.airdate <= today;
+            }).length;
+            if (total > 0 && episodes.length > 0) return aired >= total;
+            return false;
+        }).catch(function() {
+            return false;
+        }).then(function(episodesFinished) {
+            if (episodesFinished) return true;
+            return subject;
+        });
+    }).then(function(subjectOrFinished) {
+        if (subjectOrFinished === true) return true;
+        var subject = subjectOrFinished;
+        var infobox = Array.isArray(subject.infobox) ? subject.infobox : [];
+        var endDate = '';
+        infobox.forEach(function(entry) {
+            if (entry && ['播放结束', '放送終了', '结束'].indexOf(entry.key) !== -1) {
+                endDate = String(entry.value || '');
+            }
+        });
+        if (/(\d{4})年(\d{1,2})月(\d{1,2})日/.test(endDate)) return true;
+        if (/\d{4}-\d{1,2}-\d{1,2}/.test(endDate)) return true;
+        return false;
+    }).catch(function() {
+        return false;
+    });
+    bgmFinishedCache[item.id] = request;
+    return request;
 }
 
 function loadMoreBgm(loader){

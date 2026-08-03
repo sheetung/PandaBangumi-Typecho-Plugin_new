@@ -9,7 +9,7 @@
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '2.6');
+define('PandaBangumi_Plugin_VERSION', '2.7');
 
 class PandaBangumi_Plugin implements Typecho_Plugin_Interface
 {
