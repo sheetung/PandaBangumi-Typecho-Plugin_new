@@ -9,7 +9,7 @@
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '2.5');
+define('PandaBangumi_Plugin_VERSION', '2.6');
 
 class PandaBangumi_Plugin implements Typecho_Plugin_Interface
 {
@@ -64,7 +64,7 @@ class PandaBangumi_Plugin implements Typecho_Plugin_Interface
         echo htmlspecialchars('追番日历（全部）：<div class="bgm-calendar"></div>'); echo '<br>';
         echo htmlspecialchars('追番日历（仅在看）：<div data-filter="watching" class="bgm-calendar"></div>'); echo '<br>';
 
-        $ID = new Typecho_Widget_Helper_Form_Element_Text('ID', NULL, '', _t('用户 ID'), _t('填写你的 Bangumi 主页链接 user 后面那一串数字'));
+        $ID = new Typecho_Widget_Helper_Form_Element_Text('ID', NULL, '', _t('用户 ID / 用户名'), _t('填写 Bangumi 主页链接 user 后面的数字或用户名，例如 876544 或 sheetung'));
         $form->addInput($ID);
 
         $PageSize = new Typecho_Widget_Helper_Form_Element_Text('PageSize', NULL, '6', _t('每页数量'), _t('填写番剧列表每页数量，填写 -1 则在一页内全部显示，默认为 6.'));
@@ -122,7 +122,7 @@ class PandaBangumi_Plugin implements Typecho_Plugin_Interface
         }
         echo '<script>var bgmBase="';
         Helper::options()->index('/PandaBangumi');
-        echo '"</script>';
+        echo '", bgmApiBase="https://api.bgm.tv/v0", bgmUser=' . json_encode((string) Helper::options()->plugin('PandaBangumi')->ID) . ', bgmPageSize=' . (int) Helper::options()->plugin('PandaBangumi')->PageSize . ';</script>';
     }  
 
     /**
