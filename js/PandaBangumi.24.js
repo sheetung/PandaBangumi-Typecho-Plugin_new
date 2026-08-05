@@ -194,6 +194,11 @@ function loadMoreBgm(loader){
         return;
     }
 
+    if ($(loader).data('bgm-loading')) {
+        return;
+    }
+    $(loader).data('bgm-loading', true);
+
     $(loader).html('<div class="dot"></div><div class="dot"></div><div class="dot"></div>');
     
     // 拼接 URL
@@ -218,6 +223,7 @@ function loadMoreBgm(loader){
         return $.getJSON(url);
     });
     request.then(function(data){
+        $(loader).data('bgm-loading', false);
         $(loader).html('加载更多');
         if(data.length<1) $(loader).html('没有了');
         
@@ -241,7 +247,8 @@ function loadMoreBgm(loader){
                             {{status-bar}}
                         </div>
                     </a>`;
-            if (type === 'watching') {
+            var showProgress = !(typeof bgmHideProgress !== 'undefined' && bgmHideProgress);
+            if (type === 'watching' && showProgress) {
                 html = html.replace('{{status-bar}}', `
                             <div class="bgm-item-statusBar-container">
                                 <div class="bgm-item-statusBar" style="width:`+String(status)+`%"></div>
@@ -257,19 +264,36 @@ function loadMoreBgm(loader){
 
         // 记录当前数量
         listEl.attr('bgmCur', String(bgmCur));
+    }).catch(function() {
+        $(loader).data('bgm-loading', false);
+        $(loader).html('加载失败，请重试');
     })
 }
 
 function initCollection(){
-    var bgmIndex = 0;
+    var loaders = [];
     $.each($('.bgm-collection'), function(i, item) {
-        bgmIndex++;
-        $(item).attr('id', 'bgm-collection-' + String(bgmIndex));
-        $(item).after(
-                '<div class="loader" data-ref="' + '#bgm-collection-' + String(bgmIndex) + '" onclick="loadMoreBgm(this);"></div>');
+        var collection = $(item);
+        if (collection.attr('data-bgm-initialized') === 'true') {
+            return;
+        }
+
+        var collectionId = collection.attr('id');
+        if (!collectionId) {
+            collectionId = 'bgm-collection-' + String(i + 1);
+            collection.attr('id', collectionId);
+        }
+        collection.attr('data-bgm-initialized', 'true');
+
+        var loader = $('<div class="loader" onclick="loadMoreBgm(this);"></div>');
+        loader.attr('data-ref', '#' + collectionId);
+        collection.after(loader);
+        loaders.push(loader[0]);
     });
 
-    loadMoreBgm('all');
+    $.each(loaders, function(i, loader) {
+        loadMoreBgm(loader);
+    });
 }
 
 function initCalendar(){

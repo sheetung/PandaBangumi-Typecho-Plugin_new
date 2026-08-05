@@ -9,7 +9,7 @@
  * @link https://www.imalan.cn
  */
 
-define('PandaBangumi_Plugin_VERSION', '2.7');
+define('PandaBangumi_Plugin_VERSION', '2.9');
 
 class PandaBangumi_Plugin implements Typecho_Plugin_Interface
 {
@@ -92,6 +92,11 @@ class PandaBangumi_Plugin implements Typecho_Plugin_Interface
             array('hide'=>_t('在追番日历中隐藏已完结的番剧')),
             array(), _t('完结番剧显示'), _t('启用后，追番日历将隐藏已看完的番剧（通过对比观看进度与总集数判断）。'));
         $form->addInput($ShowFinished);
+
+        $HideProgress = new Typecho_Widget_Helper_Form_Element_Checkbox('HideProgress',
+            array('hide'=>_t('隐藏“在看”列表中的进度展示')),
+            array(), _t('在看进度显示'), _t('启用后，在看列表中将隐藏进度条和“已看 / 总集数”文字。'));
+        $form->addInput($HideProgress);
     }
 
     /**
@@ -144,6 +149,11 @@ class PandaBangumi_Plugin implements Typecho_Plugin_Interface
         if (!empty($bgmst) && in_array('hide', $bgmst)) {
             $hideFinished = true;
         }
-        echo '<script>var bgmHideFinished = ' . ($hideFinished ? 'true' : 'false') . ';</script>';
+        $hideProgress = false;
+        $progressSetting = Helper::options()->plugin('PandaBangumi')->HideProgress;
+        if (!empty($progressSetting) && in_array('hide', $progressSetting)) {
+            $hideProgress = true;
+        }
+        echo '<script>var bgmHideFinished = ' . ($hideFinished ? 'true' : 'false') . ', bgmHideProgress = ' . ($hideProgress ? 'true' : 'false') . ';</script>';
     }
 }
